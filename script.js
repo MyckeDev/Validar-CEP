@@ -1,64 +1,104 @@
-const form = document.getElementById('registrationForm');
-const userList = document.getElementById('userList');
+// --- Inicialização do Firebase (modo clássico) ---
+const firebaseConfig = {
+  apiKey: "AIzaSyDDEVrDD5hZJknbvL0YHx2ndizaMQqQwbA",
+  authDomain: "my-cep-4dbc9.firebaseapp.com",
+  projectId: "my-cep-4dbc9",
+  storageBucket: "my-cep-4dbc9.firebasestorage.app",
+  messagingSenderId: "890264134825",
+  appId: "1:890264134825:web:8b00039046ff2758faf5b8",
+  measurementId: "G-24GRD3HM31"
+};
 
-// Buscar o endereço pela API ViaCEP
-// Buscar o endereço pela API ViaCEP
-document.getElementById('cep').addEventListener("blur", async () => {
-    const cep = document.getElementById('cep').value.trim();
-    const addressField = document.getElementById("address");
+// Inicializa o Firebase
+firebase.initializeApp(firebaseConfig);
 
-    if (cep.length === 8) {
-        try {
-            const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-            const data = await response.json();
+// Referência ao Firestore
+const db = firebase.firestore();
 
-            if (data.logradouro) {
-                // Preenche automaticamente, mas permite edição
-                addressField.value = `${data.logradouro}, ${data.bairro}, ${data.localidade}`;
-            } else {
-                alert("CEP not found!");
-                addressField.value = ""; // limpa o campo se o CEP for inválido
-            }
-        } catch (error) {
-            alert("Error fetching CEP data");
-            addressField.value = "";
-        }
-    } else {
-        // limpa o campo caso o usuário apague o CEP
-        addressField.value = "";
-    }
-});
+// --- Elementos ---
+const form = document.getElementById("registrationForm");
+const userList = document.getElementById("userList");
+const cepInput = document.getElementById("cep");
+const addressField = document.getElementById("address");
 
-// Validar e salvar no pseudo banco de dados
-form.addEventListener("submit", (e) => {
-    e.preventDefault();
-
-    const name = document.getElementById("name").value.trim();
-    const email = document.getElementById("email").value.trim();
-    const adress = document.getElementById("adress").value.trim();
-
-    if (!name || !email || !adress) {
-        alert("Please fill in all fields.");
-        return;
-    }
-
-    const user = { name, email, adress };
-
-    // Simulação de conexão com BD (localStorage)
-    const users = JSON.parse(localStorage.getItem("users")) || [];
-    users.push(user);
-    localStorage.setItem("users", JSON.stringify(users));
-
-    form.reset();
-    document.getElementById("adress").value = "";
-    showUsers();
-});
-
-function showUsers() {
-    const users = JSON.parse(localStorage.getItem("users")) || [];
-    userList.innerHTML = "<h3>Registered Users:</h3>" +
-        users.map(u => `<p><strong>${u.name}</strong> - ${u.email}<br>${u.adress}</p>`).join("");
+// Segurança — evitar erro de null
+if (!form || !userList) {
+  console.error("Erro: elementos HTML não encontrados. Verifique os IDs no seu HTML.");
 }
 
-// Inicializar lista
+// --- Buscar endereço pelo CEP ---
+cepInput.addEventListener("blur", async () => {
+  const cep = cepInput.value.trim();
+  if (cep.length === 8) {
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const data = await response.json();
+
+      if (data.logradouro) {
+        addressField.value = `${data.logradouro}, ${data.bairro}, ${data.localidade}`;
+      } else {
+        alert("CEP não encontrado!");
+        addressField.value = "";
+      }
+    } catch (error) {
+      alert("Erro ao buscar CEP!");
+      addressField.value = "";
+    }
+  } else {
+    addressField.value = "";
+  }
+});
+
+// --- Enviar dados para o Firestore ---
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const name = document.getElementById("name").value.trim();
+  const email = document.getElementById("email").value.trim();
+  const address = addressField.value.trim();
+
+  if (!name || !email || !address) {
+    alert("Por favor, preencha todos os campos!");
+    return;
+  }
+
+  try {
+    await db.collection("users").add({
+      name,
+      email,
+      address,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    alert("Usuário cadastrado com sucesso!");
+    form.reset();
+    addressField.value = "";
+
+    showUsers();
+  } catch (error) {
+    console.error("Erro ao salvar no Firestore:", error);
+  }
+});
+
+// --- Mostrar usuários cadastrados ---
+async function showUsers() {
+  if (!userList) return;
+
+  userList.innerHTML = "<h3>Usuários cadastrados:</h3>";
+  try {
+    const snapshot = await db.collection("users").orderBy("timestamp", "desc").get();
+    snapshot.forEach((doc) => {
+      const user = doc.data();
+      userList.innerHTML += `
+        <p>
+          <strong>${user.name}</strong> - ${user.email}<br>
+          ${user.address}
+        </p>`;
+    });
+  } catch (error) {
+    console.error("Erro ao buscar usuários:", error);
+  }
+}
+
+// --- Carregar lista inicial ---
 showUsers();
